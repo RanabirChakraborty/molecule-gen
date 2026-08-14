@@ -1,0 +1,122 @@
+---
+# Scans Ansible Middleware collections for missing molecule scenarios.
+# Runs weekly and on manual dispatch. Opens/updates a tracking issue per
+# collection when gaps are found; closes it when all gaps are resolved.
+# No AI, no API keys required.
+name: Molecule gap scan
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"   # Every Monday at 07:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    name: "Scan ${{ matrix.collection.repo }}"
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        collection:
+          - repo: ansible-middleware/wildfly
+            ref: main
+          - repo: ansible-middleware/keycloak
+            ref: main
+          - repo: ansible-middleware/jws
+            ref: main
+          - repo: ansible-middleware/infinispan
+            ref: main
+          - repo: ansible-middleware/activemq
+            ref: main
+          - repo: ansible-middleware/amq_streams
+            ref: main
+
+    steps:
+      - name: Check out molecule-gen
+        uses: actions/checkout@v7
+        with:
+          path: molecule-gen
+
+      - name: Check out collection (${{ matrix.collection.repo }})
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ matrix.collection.repo }}
+          ref: ${{ matrix.collection.ref }}
+          path: collection
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install molecule-gen
+        run: pip install --no-deps ./molecule-gen && pip install pyyaml
+
+      - name: Run gap scan
+        id: scan
+        run: |
+          molecule-gen-scan \
+            --collection-path "$GITHUB_WORKSPACE/collection" \
+            --format markdown \
+            --output gap-report.md
+          echo "has_gaps=$([[ $? -eq 1 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload gap report
+        uses: actions/upload-artifact@v7
+        with:
+          name: gap-report-${{ strategy.job-index }}
+          path: gap-report.md
+          retention-days: 30
+
+      - name: Find existing tracking issue
+        id: find_issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NUMBER=$(gh issue list \
+            --repo "${{ matrix.collection.repo }}" \
+            --label "molecule-gap-scan" \
+            --state open \
+            --json number \
+            --jq '.[0].number // ""')
+          echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Build issue body
+        run: |
+          printf 'Maintained automatically by the [molecule-gen gap scanner](https://github.com/ansible-middleware/molecule-gen).\n' >> issue-body.md
+          printf 'Last updated: %s\n\n' "$(date -u +"%Y-%m-%d %H:%M UTC")" >> issue-body.md
+          cat gap-report.md >> issue-body.md
+
+      - name: Create tracking issue
+        if: steps.scan.outputs.has_gaps == 'true' && steps.find_issue.outputs.number == ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --repo "${{ matrix.collection.repo }}" \
+            --title "Missing molecule scenarios (gap scan)" \
+            --body-file issue-body.md \
+            --label "molecule-gap-scan"
+
+      - name: Update tracking issue
+        if: steps.scan.outputs.has_gaps == 'true' && steps.find_issue.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue edit "${{ steps.find_issue.outputs.number }}" \
+            --repo "${{ matrix.collection.repo }}" \
+            --body-file issue-body.md
+
+      - name: Close issue when all gaps resolved
+        if: steps.scan.outputs.has_gaps == 'false' && steps.find_issue.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue close "${{ steps.find_issue.outputs.number }}" \
+            --repo "${{ matrix.collection.repo }}" \
+            --comment "All gaps resolved — closing. The scanner will reopen if new gaps appear."
