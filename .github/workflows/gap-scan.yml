@@ -30,7 +30,7 @@ jobs:
             ref: main
           - repo: ansible-middleware/infinispan
             ref: main
-          - repo: ansible-middleware/activemq
+          - repo: ansible-middleware/amq
             ref: main
           - repo: ansible-middleware/amq_streams
             ref: main
@@ -80,7 +80,7 @@ jobs:
 
       - name: Ensure label exists
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TRIGGERING_PAT }}
         run: |
           gh label create "molecule-gap-scan" \
             --repo "${{ matrix.collection.repo }}" \
@@ -90,7 +90,7 @@ jobs:
       - name: Find existing tracking issue
         id: find_issue
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TRIGGERING_PAT }}
         run: |
           NUMBER=$(gh issue list \
             --repo "${{ matrix.collection.repo }}" \
@@ -109,7 +109,7 @@ jobs:
       - name: Create tracking issue
         if: steps.scan.outputs.has_gaps == 'true' && steps.find_issue.outputs.number == ''
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TRIGGERING_PAT }}
         run: |
           gh issue create \
             --repo "${{ matrix.collection.repo }}" \
@@ -120,7 +120,7 @@ jobs:
       - name: Update tracking issue
         if: steps.scan.outputs.has_gaps == 'true' && steps.find_issue.outputs.number != ''
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TRIGGERING_PAT }}
         run: |
           gh issue edit "${{ steps.find_issue.outputs.number }}" \
             --repo "${{ matrix.collection.repo }}" \
@@ -129,7 +129,7 @@ jobs:
       - name: Close issue when all gaps resolved
         if: steps.scan.outputs.has_gaps == 'false' && steps.find_issue.outputs.number != ''
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TRIGGERING_PAT }}
         run: |
           gh issue close "${{ steps.find_issue.outputs.number }}" \
             --repo "${{ matrix.collection.repo }}" \
