@@ -78,6 +78,15 @@ jobs:
           path: gap-report.md
           retention-days: 30
 
+      - name: Ensure label exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create "molecule-gap-scan" \
+            --repo "${{ matrix.collection.repo }}" \
+            --description "Tracking issue for missing molecule scenarios" \
+            --color "0075ca" 2>/dev/null || true
+
       - name: Find existing tracking issue
         id: find_issue
         env:
