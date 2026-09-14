@@ -55,16 +55,21 @@ jobs:
           cache: pip
 
       - name: Install molecule-gen
-        run: pip install --no-deps ./molecule-gen && pip install pyyaml
+        run: pip install ./molecule-gen
 
       - name: Run gap scan
         id: scan
         run: |
+          set +e
           molecule-gen-scan \
             --collection-path "$GITHUB_WORKSPACE/collection" \
             --format markdown \
             --output gap-report.md
-          echo "has_gaps=$([[ $? -eq 1 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          SCAN_EXIT=$?
+          set -e
+          # exit 2 means a real scan error — propagate it
+          [[ $SCAN_EXIT -le 1 ]] || exit $SCAN_EXIT
+          echo "has_gaps=$([[ $SCAN_EXIT -eq 1 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
       - name: Upload gap report
         uses: actions/upload-artifact@v7
